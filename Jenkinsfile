@@ -11,7 +11,7 @@ pipeline {
 
     environment {
         // Define common variables
-        DOCKER_IMAGE = "your-dockerhub-username/jenkins-poc-app"
+        DOCKER_IMAGE = "adash1515/jenkins-poc-app"
         DOCKER_HUB_CREDENTIALS = credentials('docker-hub-credentials-id') // User needs to setup this ID in Jenkins
     }
 
