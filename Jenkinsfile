@@ -16,10 +16,6 @@ pipeline {
     }
 
     stages {
-        /* 
-           POC 1 - Stage 1: Checkout
-           Pulls the code from the Git repository.
-        */
         stage('Checkout') {
             steps {
                 echo "Checking out branch: ${params.BRANCH}"
@@ -28,59 +24,34 @@ pipeline {
         }
 
         /* 
-           POC 2 - Parallel Stages: Lint & Test
-           Fix: Running inside a docker container because Jenkins doesn't have Python installed.
+           NEW STEP: Build the image first so the code is baked in.
+           This solves the "File Not Found" volume mounting issue.
         */
-        stage('Verify') {
-            parallel {
-                stage('Lint') {
-                    steps {
-                        echo "Running Linting via Docker (python:3.9-slim)..."
-                        sh 'docker run --rm -v ${WORKSPACE}:/app -w /app python:3.9-slim sh -c "pip install flake8 && flake8 app/"'
-                    }
-                }
-                stage('Test') {
-                    steps {
-                        echo "Running Unit Tests via Docker (python:3.9-slim)..."
-                        sh 'docker run --rm -v ${WORKSPACE}:/app -w /app python:3.9-slim sh -c "pip install pytest && pytest app/test_main.py"'
-                    }
-                }
-            }
-        }
-
-        /* 
-           POC 1 - Stage 2: Build
-           Since we are dockerizing the app, the 'build' happens during Docker image creation.
-           We'll use this stage to simply verify the requirements file exists.
-        */
-        stage('Validate Environment') {
+        stage('Docker Build') {
             steps {
-                echo "Checking project files..."
-                sh 'ls -l'
-            }
-        }
-
-        /* 
-           POC 1 - Stage 4 & POC 2: Archive & Docker Build
-           Archives artifacts and builds the Docker image.
-        */
-        stage('Package & Docker Build') {
-            steps {
-                echo "Archiving artifacts (source code and requirements)..."
-                archiveArtifacts artifacts: 'app/*.py, requirements.txt', fingerprint: true
-                
-                echo "Building Docker Image version: ${BUILD_NUMBER}"
-                /* 
-                   POC 2 Requirement: Tag image using build number
-                */
+                echo "Building Docker Image: ${DOCKER_IMAGE}:${BUILD_NUMBER}"
                 sh "docker build -t ${DOCKER_IMAGE}:${BUILD_NUMBER} ."
                 sh "docker tag ${DOCKER_IMAGE}:${BUILD_NUMBER} ${DOCKER_IMAGE}:latest"
             }
         }
 
-        /* 
-           POC 2 Requirement: Push Docker image
-        */
+        stage('Verify & Test') {
+            parallel {
+                stage('Lint') {
+                    steps {
+                        echo "Running Linting inside the built image..."
+                        sh "docker run --rm ${DOCKER_IMAGE}:${BUILD_NUMBER} flake8 ."
+                    }
+                }
+                stage('Test') {
+                    steps {
+                        echo "Running Unit Tests inside the built image..."
+                        sh "docker run --rm ${DOCKER_IMAGE}:${BUILD_NUMBER} pytest test_main.py"
+                    }
+                }
+            }
+        }
+
         stage('Push to Registry') {
             steps {
                 echo "Logging into Docker Hub and pushing image..."
